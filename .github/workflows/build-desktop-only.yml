@@ -1,0 +1,246 @@
+name: Build Armbian XFCE Desktop Only
+
+on:
+  workflow_dispatch: # 仅支持手动触发，避免每次 push 自动执行
+
+env:
+  SCRIPT_REPO: ${{ github.repository }}
+  SCRIPT_REF: ${{ github.ref_name }}
+  UBOOT_REPO: hzyitc/u-boot-onecloud
+  UBOOT_RELEASE: latest
+  UBOOT_BURNIMG: eMMC.burn.img
+  ARMBIAN_REPO: armbian/build
+  ARMBIAN_REF: main
+  PATCHES: 4077,5076
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    name: Prepare Environment
+    runs-on: ubuntu-22.04
+    outputs:
+      env: ${{ steps.get.outputs.env }}
+      tag: ${{ steps.get.outputs.tag }}
+    steps:
+      - id: get
+        name: Get repositories information
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          
+          TIME="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          TAG="v$(date -d "${TIME}" -u +'%Y.%m.%d-%H%M')-Desktop"
+
+          UBOOT_TAG="$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${UBOOT_REPO}/releases/${UBOOT_RELEASE}" | jq -r '.tag_name // empty' || true)"
+          ARMBIAN_SHA="$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${ARMBIAN_REPO}/commits/${ARMBIAN_REF}" | jq -r '.sha // empty' || true)"
+
+          {
+            echo "TAG=${TAG}"
+            echo "UBOOT_TAG=${UBOOT_TAG}"
+            echo "ARMBIAN_SHA=${ARMBIAN_SHA}"
+          } >> "$GITHUB_ENV"
+
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "env=$(base64 -w 0 < "$GITHUB_ENV")" >> "$GITHUB_OUTPUT"
+
+      - name: Create Release Placeholder
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.get.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: OneCloud XFCE Desktop Release ${{ steps.get.outputs.tag }}
+          body: |
+            ## 玩客云 OneCloud (S805) 桌面版补齐构建
+            - 仅包含 `xfce_desktop` 版本的线刷包与卡刷包。
+            - **应用级别**: 纯净极简版 (-8 级别，仅包含基础桌面环境)。
+
+  build-kernel:
+    name: Build Kernel
+    needs: prepare
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        BRANCH: [current]
+    steps:
+      - name: Import env
+        run: echo "${{ needs.prepare.outputs.env }}" | base64 -d >> "$GITHUB_ENV"
+
+      - name: Checkout Armbian
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.ARMBIAN_REPO }}
+          ref: ${{ env.ARMBIAN_SHA }}
+
+      - name: Apply HDMI Patches
+        if: ${{ env.PATCHES }}
+        run: |
+          set -euo pipefail
+          IFS=',' read -ra patch_ids <<< "${PATCHES}"
+          for patch_id in "${patch_ids[@]}"; do
+            curl -fsSL -o "pr-${patch_id}.patch" "https://github.com/armbian/build/pull/${patch_id}.patch"
+            patch --batch -p1 -N < "pr-${patch_id}.patch" || true
+          done
+
+      - name: Cache Ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ${{ runner.os }}-ccache-${{ matrix.BRANCH }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-${{ matrix.BRANCH }}-
+
+      - name: Build Kernel Debs
+        run: |
+          set -euo pipefail
+          export GITHUB_ACTIONS=false
+          mkdir -p .ccache
+          ./compile.sh kernel \
+            ALLOW_ROOT=yes BOARD=onecloud BRANCH=${{ matrix.BRANCH }} \
+            EXPERT=yes USE_CCACHE=yes CCACHE_DIR="$(pwd)/.ccache" SKIP_INIT_BINFMTS=yes
+          sudo chown "$(id -u):$(id -g)" -R output/
+          sudo chown "$(id -u):$(id -g)" -R .ccache
+
+      - name: Upload Kernel Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: debs-${{ matrix.BRANCH }}
+          path: output/debs/
+          retention-days: 1
+
+  build-desktop-images:
+    name: Build ${{ matrix.RELEASE }} (Desktop)
+    needs: [prepare, build-kernel]
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        BRANCH: [current]
+        RELEASE: [bookworm, jammy] # 只编译这两个系统
+        TYPE: [xfce_desktop]       # 强制指定桌面版
+        include:
+          - TYPE: xfce_desktop
+            DESKTOP_ENVIRONMENT: xfce
+            DESKTOP_ENVIRONMENT_CONFIG_NAME: config_base
+            DESKTOP_APPGROUPS_SELECTED: "-8" # <--- 核心修复：指定纯净版，跳过交互式菜单！
+
+    steps:
+      - name: Import env
+        run: echo "${{ needs.prepare.outputs.env }}" | base64 -d >> "$GITHUB_ENV"
+
+      - name: Checkout Armbian
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.ARMBIAN_REPO }}
+          ref: ${{ env.ARMBIAN_SHA }}
+
+      - name: Apply HDMI Patches
+        if: ${{ env.PATCHES }}
+        run: |
+          set -euo pipefail
+          IFS=',' read -ra patch_ids <<< "${PATCHES}"
+          for patch_id in "${patch_ids[@]}"; do
+            curl -fsSL -o "pr-${patch_id}.patch" "https://github.com/armbian/build/pull/${patch_id}.patch"
+            patch --batch -p1 -N < "pr-${patch_id}.patch" || true
+          done
+
+      - name: Download Kernel Debs
+        uses: actions/download-artifact@v4
+        with:
+          name: debs-${{ matrix.BRANCH }}
+          path: output/debs/
+
+      - name: Install Host Tools & Setup binfmt
+        run: |
+          set -euo pipefail
+          sudo apt update
+          sudo apt install -y qemu-user-static binfmt-support arch-test debootstrap systemd-container ca-certificates img2simg
+          sudo update-binfmts --enable qemu-arm || true
+          sudo update-binfmts --enable qemu-aarch64 || true
+
+      - name: Compile Armbian Desktop OS Image
+        run: |
+          set -euo pipefail
+          export GITHUB_ACTIONS=false
+          
+          # 强制传递预设变量，避免交互式脚本卡死
+          ./compile.sh build \
+            ALLOW_ROOT=yes PREFER_DOCKER=no BOARD=onecloud BRANCH=${{ matrix.BRANCH }} RELEASE=${{ matrix.RELEASE }} \
+            KERNEL_CONFIGURE=no EXPERT=yes SKIP_EXTERNAL_TOOLCHAINS=yes USE_CCACHE=no \
+            SKIP_INIT_BINFMTS=no \
+            BUILD_MINIMAL="no" \
+            BUILD_DESKTOP="yes" \
+            DESKTOP_ENVIRONMENT="${{ matrix.DESKTOP_ENVIRONMENT }}" \
+            DESKTOP_ENVIRONMENT_CONFIG_NAME="${{ matrix.DESKTOP_ENVIRONMENT_CONFIG_NAME }}" \
+            DESKTOP_APPGROUPS_SELECTED="${{ matrix.DESKTOP_APPGROUPS_SELECTED }}" \
+            COMPRESS_OUTPUTIMAGE=img
+
+          sudo chown "$(id -u):$(id -g)" -R output/
+
+      - name: Generate Amlogic .burn.img
+        id: postprocess
+        run: |
+          set -euo pipefail
+
+          curl -fsSL -o ./AmlImg https://github.com/hzyitc/AmlImg/releases/download/v0.3.1/AmlImg_v0.3.1_linux_amd64
+          chmod +x ./AmlImg
+
+          DEB_FILE="$(find output/debs -maxdepth 1 -type f -name 'linux-image-*.deb' | head -n 1 || true)"
+          REAL_KERNEL="$(echo "$(basename "${DEB_FILE}" .deb)" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | tail -n1 || echo '6.12.28')"
+          ARMBIAN_VER="26.08.0"
+
+          BASE_NAME="Armbian_${ARMBIAN_VER}_Onecloud_${{ matrix.RELEASE }}_${{ matrix.BRANCH }}_${REAL_KERNEL}_${{ matrix.TYPE }}"
+          
+          curl -fsSL -o ./uboot.img "https://github.com/${UBOOT_REPO}/releases/download/${UBOOT_TAG}/${UBOOT_BURNIMG}"
+          rm -rf burn
+          ./AmlImg unpack ./uboot.img burn/
+
+          diskimg="$(find output/images -maxdepth 1 -type f -name '*.img' ! -name '*.burn.img' | head -n 1 || true)"
+          
+          loop="$(sudo losetup --find --show --partscan "${diskimg}")"
+          sudo img2simg "${loop}p1" burn/boot.simg
+          sudo img2simg "${loop}p2" burn/rootfs.simg
+          sudo losetup -d "${loop}" || true
+
+          echo -n "sha1sum $(sha1sum burn/boot.simg | awk '{print $1}')" > burn/boot.VERIFY
+          echo -n "sha1sum $(sha1sum burn/rootfs.simg | awk '{print $1}')" > burn/rootfs.VERIFY
+
+          cat <<EOF >> burn/commands.txt
+          PARTITION:boot:sparse:boot.simg
+          VERIFY:boot:normal:boot.VERIFY
+          PARTITION:rootfs:sparse:rootfs.simg
+          VERIFY:rootfs:normal:rootfs.VERIFY
+          EOF
+
+          ./AmlImg pack "output/images/${BASE_NAME}.burn.img" burn/
+          mv "${diskimg}" "output/images/${BASE_NAME}.img"
+
+          echo "armbian_ver=${ARMBIAN_VER}" >> "$GITHUB_OUTPUT"
+          echo "kernel_ver=${REAL_KERNEL}" >> "$GITHUB_OUTPUT"
+
+      - name: Compress Images with XZ
+        run: |
+          set -euo pipefail
+          cd output/images/
+          for f in *.img; do
+            [ -f "${f}" ] || continue
+            sha256sum "${f}" >> sha256sums.txt
+            xz -9 --threads=0 "${f}"
+          done
+
+      - name: Upload Images to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          append_body: true
+          body: |
+            ---
+            ### 桌面版构建规格: ${{ matrix.RELEASE }} - ${{ matrix.TYPE }}
+            - **Armbian 版本**: `${{ steps.postprocess.outputs.armbian_ver }}`
+            - **内核版本**: `${{ steps.postprocess.outputs.kernel_ver }}`
+            - **系统包库**: `${{ matrix.RELEASE }}`
+          files: |
+            output/images/*.xz
+            output/images/sha256sums.txt
