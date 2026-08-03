@@ -8,7 +8,6 @@
 [![Latest Release](https://img.shields.io/github/v/release/upleung/armbian-onecloud?style=for-the-badge&logo=github&color=success)](https://github.com/upleung/armbian-onecloud/releases/latest)
 [![Architecture](https://img.shields.io/badge/Arch-ARMv7%20%2F%20armhf-orange?style=for-the-badge&logo=arm)](https://github.com/upleung/armbian-onecloud)
 [![SoC](https://img.shields.io/badge/SoC-Amlogic%20S805-deepskyblue?style=for-the-badge)](https://github.com/upleung/armbian-onecloud)
-[![License](https://img.shields.io/github/license/upleung/armbian-onecloud?style=for-the-badge&color=gray)](LICENSE)
 
 [📥 下载最新固件](https://github.com/upleung/armbian-onecloud/releases) • [🛠️ 刷机指南](#-刷机说明) • [💡 镜像说明](#-镜像变体说明)
 
@@ -45,7 +44,7 @@
 
 | 文件后缀 | 适用于场景 | 说明 |
 | :--- | :--- | :--- |
-| **`*.burn.img.xz`** | **线刷（强烈推荐）** | 解压出 `.burn.img` 后，使用 **Amlogic USB Burning Tool** 工具配合双公头 USB 线直接烧录至玩客云内置 eMMC。 |
+| **`*.burn.img.xz`** | **线刷（强烈推荐）** | 解压出 `.burn.img` 后，使用 **Amlogic USB Burning Tool** 工具配合双公头 USB 线直接烧录至玩客云内置 eMMC。（实测USB-C数据线连接带C口的笔记本也能刷）） |
 | **`*.img.xz`** | **卡刷 / 传统 DD 刷机** | 解压出 `.img` 后，可使用 **BalenaEtcher** 或 **Rufus** 写入 SD 卡、U 盘，或在已有 Linux 下通过 `dd` 命令写入。 |
 
 ### 发行版及版本规格表：
