@@ -85,12 +85,12 @@
 
 ---
 
-## 🙏 致谢与参考
+## 🐧 致谢与参考
 
 * 官方 Armbian 构建框架：[armbian/build](https://github.com/armbian/build)
 * 玩客云构建参考仓库：[hzyitc/armbian-onecloud](https://github.com/hzyitc/armbian-onecloud)
 * HDMI 补丁与内核支持：[xdarklight/linux (meson-mx-integration)](https://github.com/xdarklight/linux/tree/meson-mx-integration-5.18-20220417)
-* Amlogic S805 Datasheet & Odroid 官方文档
+* Amlogic S805 Datasheet & Odroid 官方文档：[S805/Datasheet-PDF](https://dn.odroid.com/S805/Datasheet/S805_Datasheet%20V0.8%2020150126.pdf )
 
 ---
 
