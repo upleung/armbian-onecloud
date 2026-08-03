@@ -61,7 +61,7 @@
 1. **获取固件**：
    前往本仓库的 [Releases 页面](https://github.com/upleung/armbian-onecloud/releases)，下载适合您需求的 `*.burn.img.xz` 压缩包并解压。
 2. **准备工具**：
-   * 双公头 USB 数据线 一条（或用USB-C数据线连接笔记本也能刷）
+   * 双公头 USB 数据线 一条（或用USB-C数据线连接笔记本C口）
    * 安装 **Amlogic USB Burning Tool** (推荐 v2.2.0 及以上版本)
 3. **开始烧录**：
    * 打开烧录工具，导入解压出来的 `.burn.img` 镜像文件。
