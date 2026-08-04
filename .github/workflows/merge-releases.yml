@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       source_tag:
-        description: v2026.08.03-1611-Desktop'源 Release 的 Tag (提取此处的文件)'
+        description: '源 Release 的 Tag (提取此处的文件)'
         required: true
         type: string
       target_tag:
-        description: v2026.08.03-1415'目标 Release 的 Tag (将文件合并到此处)'
+        description: '目标 Release 的 Tag (将文件合并到此处)'
         required: true
         type: string
 
