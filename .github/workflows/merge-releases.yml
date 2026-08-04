@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       source_tag:
-        description: '源 Release 的 Tag (提取此处的文件)'
+        description: '来源 Release Tag (提取此处的文件)'
         required: true
         type: string
       target_tag:
-        description: '目标 Release 的 Tag (将文件合并到此处)'
+        description: '目标 Release Tag (将文件合并到此处)'
         required: true
         type: string
 
