@@ -1,0 +1,40 @@
+name: Tools - Merge Releases
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_tag:
+        description: v2026.08.03-1611-Desktop'源 Release 的 Tag (提取此处的文件)'
+        required: true
+        type: string
+      target_tag:
+        description: v2026.08.03-1415'目标 Release 的 Tag (将文件合并到此处)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  merge-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download assets from source release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p assets
+          # 下载源 release 的所有文件
+          gh release download "${{ github.event.inputs.source_tag }}" --repo ${{ github.repository }} --dir assets/
+          
+      - name: Upload assets to target release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 将下载的文件上传到目标 release
+          gh release upload "${{ github.event.inputs.target_tag }}" assets/* --repo ${{ github.repository }} --clobber
+          
+      - name: Notice
+        run: |
+          echo "文件已成功从 ${{ github.event.inputs.source_tag }} 复制到 ${{ github.event.inputs.target_tag }}。"
+          echo "请前往 Releases 页面检查确认后，手动删除旧的 Release。"
